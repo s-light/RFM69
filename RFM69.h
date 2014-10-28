@@ -34,13 +34,22 @@
 #include <Arduino.h>            //assumes Arduino IDE v1.0 or greater
 
 #define RF69_MAX_DATA_LEN         61 // to take advantage of the built in AES/CRC we want to limit the frame size to the internal FIFO size (66 bytes - 3 bytes overhead)
-#define RF69_SPI_CS               SS // SS is the SPI slave select pin, for instance D10 on atmega328
+
 
 // INT0 on AVRs should be connected to RFM69's DIO0 (ex on Atmega328 it's D2, on Atmega644/1284 it's D2)
-#if defined(__AVR_ATmega168__) || defined(__AVR_ATmega328P__) || defined(__AVR_ATmega88) || defined(__AVR_ATmega8__) || defined(__AVR_ATmega88__) || defined(__AVR_ATmega32U4__)
+#if defined(__AVR_ATmega168__) || defined(__AVR_ATmega328P__) || defined(__AVR_ATmega88) || defined(__AVR_ATmega8__) || defined(__AVR_ATmega88__) || defined(__AVR_ATmega2560__) || defined(__AVR_ATmega2560P__)
+  // On ATmega328  & ATmega2560 boards (UNO & MEGA) D2 == INTERRUPT0
+  #define RF69_SPI_CS           SS // SS is the SPI slave select pin, for instance D10 on atmega328
   #define RF69_IRQ_PIN          2
   #define RF69_IRQ_NUM          0
+#elif defined(__AVR_ATmega32U4__)
+  // On ATmega32U4 boards (LEONARDO) D2 == INTERRUPT1; D3 == INTERRUPT0
+  //http://forum.pjrc.com/threads/24576-RFM69W-%28RFM69HW%29-transceiver-T3?p=38776&viewfull=1#post38776
+  #define RF69_SPI_CS          10 // use fixed D10 - SS is not available on leonardo (its tied to the RX LED)
+  #define RF69_IRQ_PIN          2
+  #define RF69_IRQ_NUM          1
 #elif defined(__AVR_ATmega644P__) || defined(__AVR_ATmega1284P__)
+  #define RF69_SPI_CS           SS // SS is the SPI slave select pin, for instance D10 on atmega328
   #define RF69_IRQ_PIN          2
   #define RF69_IRQ_NUM          2
 #endif

@@ -90,20 +90,60 @@ bool RFM69::initialize(byte freqBand, byte nodeID, byte networkID)
   pinMode(_slaveSelectPin, OUTPUT);
   SPI.begin();
   
+  // Attention if module is not wired correctly this library will block here!!
+  Serial.println("writeREG SYNCVALUE1");
+  
   do writeReg(REG_SYNCVALUE1, 0xaa); while (readReg(REG_SYNCVALUE1) != 0xaa);
-	do writeReg(REG_SYNCVALUE1, 0x55); while (readReg(REG_SYNCVALUE1) != 0x55);
+  do writeReg(REG_SYNCVALUE1, 0x55); while (readReg(REG_SYNCVALUE1) != 0x55);
 
+  Serial.println("writeREG CONFIG");
   for (byte i = 0; CONFIG[i][0] != 255; i++)
     writeReg(CONFIG[i][0], CONFIG[i][1]);
 
   // Encryption is persistent between resets and can trip you up during debugging.
   // Disable it during initialization so we always start from a known state.
   encrypt(0);
-
+  
+	Serial.println("setHighPower");
   setHighPower(_isRFM69HW); //called regardless if it's a RFM69W or RFM69HW
+  Serial.println("setMode RF69_MODE_STANDBY");
   setMode(RF69_MODE_STANDBY);
+  Serial.println("wait for ModeReady");
 	while ((readReg(REG_IRQFLAGS1) & RF_IRQFLAGS1_MODEREADY) == 0x00); // Wait for ModeReady
-  attachInterrupt(_interruptNum, RFM69::isr0, RISING);
+	
+	///////// edit by s-light
+	/*
+		added extended interrupt pin handling
+		added C preprocessor conditionals to check if 'digitalPinToInterrupt' is available and
+		as fall-back switch between boards on processor defines.
+		based on http://forum.pjrc.com/threads/24576-RFM69W-%28RFM69HW%29-transceiver-T3?p=38776&viewfull=1#post38776
+		SS pin fixed to D10 for compatibility with all boards.
+		now you can use the default initialiser with 
+			ATmega328P (UNO / Duemilanove )
+			ATmega32U4 (Leonardo)
+			ATmega2560 (MEGA)
+			ATmega1284 (mighty-1284p mapping)
+		chips (Boards).
+		i have tested this change on the mentioned boards with the added Gateway-Basic and Node-Basic sketches (all boards with the same sketches)
+		some pictures of the tests: blog.s-light.eu
+	*/
+	// check for interrupt pin
+	// based on tip from http://forum.pjrc.com/threads/24576-RFM69W-%28RFM69HW%29-transceiver-T3?p=38776&viewfull=1#post38776
+	// #ifdef digitalPinToInterrupt
+		// int interruptNR = digitalPinToInterrupt(_interruptPin);
+		// if (interruptNR >= 0) {
+			// attachInterrupt(interruptNR, RFM69::isr0, RISING);
+		// }
+	// #else
+		// default fall-back for RF69_IRQ_PIN
+		Serial.println("attachInterrupt()");
+		Serial.print("\t _interruptNum:");
+		Serial.println(_interruptNum);
+		// attachInterrupt(_interruptNum, RFM69::isr0, RISING);
+		attachInterrupt(3, RFM69::isr0, RISING);
+	// #endif
+  ///////// end
+  
 
   selfPointer = this;
   _address = nodeID;
