@@ -33,11 +33,6 @@
 #define RFM69_h
 #include <Arduino.h>            //assumes Arduino IDE v1.0 or greater
 
-<<<<<<< HEAD
-#define MAX_DATA_LEN         61 // to take advantage of the built in AES/CRC we want to limit the frame size to the internal FIFO size (66 bytes - 3 bytes overhead)
-#define SPI_CS               10 // SS is the SPI slave select pin, for instance D10 on atmega328 // FIXED TO Pin 10 for compatibility with Leonardo Boards.
-#define RF69_IRQ_PIN          2 // INT0 on AVRs should be connected to DIO0 (ex on Atmega328 it's D2) --> added handling in RFM69.cpp line 85
-=======
 #define RF69_MAX_DATA_LEN         61 // to take advantage of the built in AES/CRC we want to limit the frame size to the internal FIFO size (66 bytes - 3 bytes overhead)
 #define RF69_SPI_CS               SS // SS is the SPI slave select pin, for instance D10 on atmega328
 
@@ -50,7 +45,6 @@
   #define RF69_IRQ_NUM          2
 #endif
 
->>>>>>> upstream/master
 #define CSMA_LIMIT          -90 // upper RX signal sensitivity threshold in dBm for carrier sense access
 #define RF69_MODE_SLEEP       0 // XTAL OFF
 #define	RF69_MODE_STANDBY     1 // XTAL ON
