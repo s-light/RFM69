@@ -21,8 +21,7 @@ volatile byte RFM69::ACK_RECEIVED; /// Should be polled immediately after sendin
 volatile int RFM69::RSSI; //most accurate RSSI during reception (closest to the reception)
 RFM69* RFM69::selfPointer;
 
-bool RFM69::initialize(byte freqBand, byte nodeID, byte networkID)
-{
+bool RFM69::initialize(byte freqBand, byte nodeID, byte networkID) {
   const byte CONFIG[][2] =
   {
     /* 0x01 */ { REG_OPMODE, RF_OPMODE_SEQUENCER_ON | RF_OPMODE_LISTEN_OFF | RF_OPMODE_STANDBY },
@@ -69,7 +68,8 @@ bool RFM69::initialize(byte freqBand, byte nodeID, byte networkID)
   SPI.setClockDivider(SPI_CLOCK_DIV2); //max speed, except on Due which can run at system clock speed
   SPI.begin();
   
-  do writeReg(REG_SYNCVALUE1, 0xaa); while (readReg(REG_SYNCVALUE1) != 0xaa);
+	// Attention if modul is not wired correctly this library will block here!!
+	do writeReg(REG_SYNCVALUE1, 0xaa); while (readReg(REG_SYNCVALUE1) != 0xaa);
 	do writeReg(REG_SYNCVALUE1, 0x55); while (readReg(REG_SYNCVALUE1) != 0x55);
   
   for (byte i = 0; CONFIG[i][0] != 255; i++)
@@ -82,22 +82,70 @@ bool RFM69::initialize(byte freqBand, byte nodeID, byte networkID)
   setHighPower(_isRFM69HW); //called regardless if it's a RFM69W or RFM69HW
   setMode(RF69_MODE_STANDBY);
 	while ((readReg(REG_IRQFLAGS1) & RF_IRQFLAGS1_MODEREADY) == 0x00); // Wait for ModeReady
-  attachInterrupt(0, RFM69::isr0, RISING);
   
+  ///////// edit by s-light
+	/*
+		added extended interrupt pin handling
+		added C preprocessor conditionals to check if 'digitalPinToInterrupt' is available and
+		as fall-back switch between boards on processor defines.
+		based on http://forum.pjrc.com/threads/24576-RFM69W-%28RFM69HW%29-transceiver-T3?p=38776&viewfull=1#post38776
+		SS pin fixed to D10 for compatibility with all boards.
+		now you can use the default initialiser with 
+			ATmega328P (UNO / Duemilanove )
+			ATmega32U4 (Leonardo)
+			ATmega2560 (MEGA)
+			ATmega1284 (mighty-1284p mapping)
+		chips (Boards).
+		i have tested this change on the mentioned boards with the added Gateway-Basic and Node-Basic sketches (all boards with the same sketches)
+		some pictures of the tests: blog.s-light.eu
+	*/
+	// check for interrupt pin
+	// based on tip from http://forum.pjrc.com/threads/24576-RFM69W-%28RFM69HW%29-transceiver-T3?p=38776&viewfull=1#post38776
+	#ifdef digitalPinToInterrupt
+		int interruptNR = digitalPinToInterrupt(_interruptPin);
+		if (interruptNR >= 0) {
+			attachInterrupt(interruptNR, RFM69::isr0, RISING);
+		}
+	#else
+		// default fall-back for RF69_IRQ_PIN
+		// #if _interruptPin == RF69_IRQ_PIN
+			#if defined(__AVR_ATmega32U4__)
+				// On ATmega32U4 boards (LEONARDO) D2 == INTERRUPT3
+				attachInterrupt(3, RFM69::isr0, RISING);
+			#elif defined(__AVR_ATmega328__) || defined(__AVR_ATmega328P__)
+				// On ATmega328 boards (UNO) D2 == INTERRUPT0
+				attachInterrupt(0, RFM69::isr0, RISING);
+			#elif defined(__AVR_ATmega2560__) || defined(__AVR_ATmega2560P__)
+				// On ATmega2560 boards (Mega) D2 == INTERRUPT4
+				attachInterrupt(4, RFM69::isr0, RISING);
+			#elif defined(__AVR_ATmega1284__) || defined(__AVR_ATmega1284P__)
+				// mighty-1284p boards with ATmega1284: D2 == INTERRUPT2
+				#warning ATmega1284 - check for Pin-Mapping - currently use mighty-1284p mappin: uC-Pin 3 (PB2) = Int2 = Arduino-Pin D2
+				attachInterrupt(2, RFM69::isr0, RISING);
+			#else
+				#error your Target-Board is not known by this library. - use UNO (ATmega328 / ATmega328P) or Leonardo (ATmega32U4) Arduino Boards with Interrupt on Arduino-Pin D2.
+			#endif
+		// #else
+			// #error I dont known how to handle your Interrupt Pin! - use UNO (ATmega328) or Leonardo (ATmega32U4) Arduino Boards with Interrupt on D2.
+		// #endif
+	#endif
+  ///////// end
+  
+
+ 
+
   selfPointer = this;
   _address = nodeID;
   return true;
 }
 
-void RFM69::setFrequency(uint32_t FRF)
-{
+void RFM69::setFrequency(uint32_t FRF) {
   writeReg(REG_FRFMSB, FRF >> 16);
   writeReg(REG_FRFMID, FRF >> 8);
   writeReg(REG_FRFLSB, FRF);
 }
 
-void RFM69::setMode(byte newMode)
-{
+void RFM69::setMode(byte newMode) {
 	if (newMode == _mode) return; //TODO: can remove this?
 
 	switch (newMode) {
@@ -132,22 +180,19 @@ void RFM69::sleep() {
   setMode(RF69_MODE_SLEEP);
 }
 
-void RFM69::setAddress(byte addr)
-{
+void RFM69::setAddress(byte addr) {
   _address = addr;
 	writeReg(REG_NODEADRS, _address);
 }
 
 // set output power: 0=min, 31=max
 // this results in a "weaker" transmitted signal, and directly results in a lower RSSI at the receiver
-void RFM69::setPowerLevel(byte powerLevel)
-{
+void RFM69::setPowerLevel(byte powerLevel) {
   _powerLevel = powerLevel;
   writeReg(REG_PALEVEL, (readReg(REG_PALEVEL) & 0xE0) | (_powerLevel > 31 ? 31 : _powerLevel));
 }
 
-bool RFM69::canSend()
-{
+bool RFM69::canSend() {
   if (_mode == RF69_MODE_RX && PAYLOADLEN == 0 && readRSSI() < CSMA_LIMIT) //if signal stronger than -100dBm is detected assume channel activity
   {
     setMode(RF69_MODE_STANDBY);
@@ -156,8 +201,7 @@ bool RFM69::canSend()
   return false;
 }
 
-void RFM69::send(byte toAddress, const void* buffer, byte bufferSize, bool requestACK)
-{
+void RFM69::send(byte toAddress, const void* buffer, byte bufferSize, bool requestACK) {
   writeReg(REG_PACKETCONFIG2, (readReg(REG_PACKETCONFIG2) & 0xFB) | RF_PACKET2_RXRESTART); // avoid RX deadlocks
   while (!canSend()) receiveDone();
   sendFrame(toAddress, buffer, bufferSize, requestACK, false);
@@ -302,7 +346,7 @@ bool RFM69::receiveDone() {
   }
   receiveBegin();
   return false;
-//}
+// }
 }
 
 // To enable encryption: radio.encrypt("ABCDEFGHIJKLMNOP");
@@ -334,8 +378,7 @@ int RFM69::readRSSI(bool forceTrigger) {
   return rssi;
 }
 
-byte RFM69::readReg(byte addr)
-{
+byte RFM69::readReg(byte addr) {
   select();
   SPI.transfer(addr & 0x7F);
   byte regval = SPI.transfer(0);
@@ -343,8 +386,7 @@ byte RFM69::readReg(byte addr)
   return regval;
 }
 
-void RFM69::writeReg(byte addr, byte value)
-{
+void RFM69::writeReg(byte addr, byte value) {
   select();
   SPI.transfer(addr | 0x80);
   SPI.transfer(value);
@@ -390,8 +432,7 @@ void RFM69::setCS(byte newSPISlaveSelect) {
 }
 
 //for debugging
-void RFM69::readAllRegs()
-{
+void RFM69::readAllRegs() {
   byte regVal;
 	
   for (byte regAddr = 1; regAddr <= 0x4F; regAddr++)
@@ -410,16 +451,14 @@ void RFM69::readAllRegs()
   unselect();
 }
 
-byte RFM69::readTemperature(byte calFactor)  //returns centigrade
-{
+byte RFM69::readTemperature(byte calFactor) {  //returns centigrade 
   setMode(RF69_MODE_STANDBY);
   writeReg(REG_TEMP1, RF_TEMP1_MEAS_START);
   while ((readReg(REG_TEMP1) & RF_TEMP1_MEAS_RUNNING)) Serial.print('*');
   return ~readReg(REG_TEMP2) + COURSE_TEMP_COEF + calFactor; //'complement'corrects the slope, rising temp = rising val
 }												   	  // COURSE_TEMP_COEF puts reading in the ballpark, user can add additional correction
 
-void RFM69::rcCalibration()
-{
+void RFM69::rcCalibration() {
   writeReg(REG_OSC1, RF_OSC1_RCCAL_START);
   while ((readReg(REG_OSC1) & RF_OSC1_RCCAL_DONE) == 0x00);
 }
